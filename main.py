@@ -2,7 +2,7 @@ import tkinter as tk
 from typing import List
 import random
 import math
-
+from tkinter.constants import *
 
 class Player():
     def __init__(self, name, rating):
@@ -14,6 +14,10 @@ class Player():
 class MatchMaker:
     def __init__(self):
         self.known_players = {}
+        self.round = 0
+
+    def get_round(self):
+        return self.round
 
     def players_with_known(self, players):
         players_with_known = []
@@ -25,6 +29,7 @@ class MatchMaker:
         return players_with_known
 
     def get_matches(self, players: List[Player]):
+        self.round += 1
         players_with_known = self.players_with_known(players)
         pairings = []
         while len(players_with_known) > 1:
@@ -58,7 +63,7 @@ class PlayersBody(tk.Frame):
 
         self.entries = []
         self.buttons = []
-        self.rows = 1
+        self.rows = 16
         self.columns = 4
 
         # create the table of widgets
@@ -158,55 +163,59 @@ class PlayersBody(tk.Frame):
             return False
         return True
 
+class VerticalScrolledFrame(tk.Frame):
+    """A pure Tkinter scrollable frame that actually works!
+    * Use the 'interior' attribute to place widgets inside the scrollable frame.
+    * Construct and pack/place/grid normally.
+    * This frame only allows vertical scrolling.
+    """
+    def __init__(self, parent, *args, **kw):
+        tk.Frame.__init__(self, parent, *args, **kw)
+
+        # Create a canvas object and a vertical scrollbar for scrolling it.
+        vscrollbar = tk.Scrollbar(self, orient=VERTICAL)
+        vscrollbar.pack(fill=Y, side=RIGHT, expand=FALSE)
+        canvas = tk.Canvas(self, bd=0, highlightthickness=0,
+                           yscrollcommand=vscrollbar.set)
+        canvas.pack(side=LEFT, fill=BOTH, expand=TRUE)
+        vscrollbar.config(command=canvas.yview)
+
+        # Reset the view
+        canvas.xview_moveto(0)
+        canvas.yview_moveto(0)
+
+        # Create a frame inside the canvas which will be scrolled with it.
+        self.interior = interior = PlayersBody(canvas)
+        interior_id = canvas.create_window(0, 0, window=interior,
+                                           anchor=NW)
+
+        # Track changes to the canvas and frame width and sync them,
+        # also updating the scrollbar.
+        def _configure_interior(event):
+            # Update the scrollbars to match the size of the inner frame.
+            size = (interior.winfo_reqwidth(), interior.winfo_reqheight())
+            canvas.config(scrollregion="0 0 %s %s" % size)
+            if interior.winfo_reqwidth() != canvas.winfo_width():
+                # Update the canvas's width to fit the inner frame.
+                canvas.config(width=interior.winfo_reqwidth())
+        interior.bind('<Configure>', _configure_interior)
+
+        def _configure_canvas(event):
+            if interior.winfo_reqwidth() != canvas.winfo_width():
+                # Update the inner frame's width to fill the canvas.
+                canvas.itemconfigure(interior_id, width=canvas.winfo_width())
+        canvas.bind('<Configure>', _configure_canvas)
+
 
 class PlayersUI(tk.Frame):
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
         header = PlayersHeader(parent)
-        body = PlayersBody(parent)
-        footer = PlayersFooter(parent, body.get)
+        body = VerticalScrolledFrame(parent)
+        footer = PlayersFooter(parent, body.interior.get)
         header.pack(side="top", fill="both")  # , expand=True)
-        body.pack(side="top", fill="both")  # , expand=True)
+        body.pack(side="top", fill="both", expand=True)
         footer.pack(side="top", fill="both")  # , expand=True)
-        # scrollable_body = Scrollable(body, width=32)
-        # scrollable_body.update()
-
-
-class Scrollable(tk.Frame):
-    """
-       Make a frame scrollable with scrollbar on the right.
-       After adding or removing widgets to the scrollable frame,
-       call the update() method to refresh the scrollable area.
-    """
-
-    def __init__(self, frame, width=16):
-        scrollbar = tk.Scrollbar(frame, width=width)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, expand=False)
-
-        self.canvas = tk.Canvas(frame, yscrollcommand=scrollbar.set)
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        scrollbar.config(command=self.canvas.yview)
-
-        self.canvas.bind('<Configure>', self.__fill_canvas)
-
-        # base class initialization
-        tk.Frame.__init__(self, frame)
-
-        # assign this obj (the inner frame) to the windows item of the canvas
-        self.windows_item = self.canvas.create_window(0, 0, window=self, anchor=tk.NW)
-
-    def __fill_canvas(self, event):
-        "Enlarge the windows item to the canvas width"
-
-        canvas_width = event.width
-        self.canvas.itemconfig(self.windows_item, width=canvas_width)
-
-    def update(self):
-        "Update the canvas and the scrollregion"
-
-        self.update_idletasks()
-        self.canvas.config(scrollregion=self.canvas.bbox(self.windows_item))
 
 
 class PlayersHeader(tk.Frame):
@@ -216,7 +225,7 @@ class PlayersHeader(tk.Frame):
         frame = tk.Frame(self)
         frame.pack(side="top", fill="both", expand=True)
         for i, title in enumerate(names):
-            l = tk.Label(frame, text=title, font='Helvetica 12 bold')
+            l = tk.Label(frame, text=title, font='Helvetica 16 bold')
             l.grid(row=0, column=i)
             frame.grid_columnconfigure(i, weight=1)
 
@@ -225,7 +234,7 @@ class PlayersFooter(tk.Frame):
     def __init__(self, parent, get):
         tk.Frame.__init__(self, parent)
         self.get = get
-        self.new_round_btn = tk.Button(self, text="Ny runde", command=self.new_round)
+        self.new_round_btn = tk.Button(self, text="Ny runde", font='Helvetica 16 bold', command=self.new_round)
         self.new_round_btn.pack()
         self.matchmaker = MatchMaker()
 
@@ -233,9 +242,10 @@ class PlayersFooter(tk.Frame):
         entries = list(filter(lambda x: len(x[0]) > 0 and x[1] >= 0 and not x[2], self.get()))
         players = list(map(lambda x: Player(x[0], x[1]), entries))
         matches = self.matchmaker.get_matches(players)
+        round = self.matchmaker.get_round()
         newWindow = tk.Toplevel(self)
         newWindow.geometry("1920x1080")
-        newWindow.title("Kampe")
+        newWindow.title(f"Runde {round}")
         names = ["","Hvid", "", "Sort",""]
         frame = tk.Frame(newWindow)
         frame.pack(side="top", fill="both")
@@ -270,5 +280,6 @@ class PlayersFooter(tk.Frame):
 
 root = tk.Tk()
 root.geometry("1000x500")
+root.title("Bønderne MatchMaker by ChrIT")
 PlayersUI(root)
 root.mainloop()
