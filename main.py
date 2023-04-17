@@ -48,6 +48,8 @@ class MatchMaker:
                     opponent = random.choice(not_played)
             current.previously_played.append(opponent)
             opponent.previously_played.append(current)
+            current.previously_played = current.previously_played[-5:]
+            opponent.previously_played = opponent.previously_played[-5:]
             players_with_known.remove(opponent)
             self.known_players.update({current.name: current, opponent.name: opponent})
             pairings.append([current, opponent])
@@ -246,8 +248,83 @@ class PlayersFooter(tk.Frame):
         newWindow = tk.Toplevel(self)
         newWindow.geometry("1920x1080")
         newWindow.title(f"Runde {round}")
-        names = ["","Hvid", "", "Sort",""]
-        frame = tk.Frame(newWindow)
+        header = MatchUpHeader(newWindow)
+        body = MatchUpBody(newWindow, matches)
+        header.pack(side="top", fill="both")
+        body.pack(side="top", fill="both")
+
+class MatchUpBody(tk.Frame):
+    """A pure Tkinter scrollable frame that actually works!
+    * Use the 'interior' attribute to place widgets inside the scrollable frame.
+    * Construct and pack/place/grid normally.
+    * This frame only allows vertical scrolling.
+    """
+    def __init__(self, parent, matches):
+        tk.Frame.__init__(self, parent)
+
+        # Create a canvas object and a vertical scrollbar for scrolling it.
+        vscrollbar = tk.Scrollbar(self, orient=VERTICAL)
+        vscrollbar.pack(fill=Y, side=RIGHT, expand=FALSE)
+        canvas = tk.Canvas(self, bd=0, highlightthickness=0,
+                           yscrollcommand=vscrollbar.set)
+        canvas.pack(side=LEFT, fill=BOTH, expand=TRUE)
+        vscrollbar.config(command=canvas.yview)
+
+        # Reset the view
+        canvas.xview_moveto(0)
+        canvas.yview_moveto(0)
+
+        # Create a frame inside the canvas which will be scrolled with it.
+        self.interior = interior = MatchUpRows(canvas, matches)
+        interior_id = canvas.create_window(0, 0, window=interior,
+                                           anchor=NW)
+
+        # Track changes to the canvas and frame width and sync them,
+        # also updating the scrollbar.
+        def _configure_interior(event):
+            # Update the scrollbars to match the size of the inner frame.
+            size = (interior.winfo_reqwidth(), interior.winfo_reqheight())
+            canvas.config(scrollregion="0 0 %s %s" % size)
+            if interior.winfo_reqwidth() != canvas.winfo_width():
+                # Update the canvas's width to fit the inner frame.
+                canvas.config(width=interior.winfo_reqwidth())
+        interior.bind('<Configure>', _configure_interior)
+
+        def _configure_canvas(event):
+            if interior.winfo_reqwidth() != canvas.winfo_width():
+                # Update the inner frame's width to fill the canvas.
+                canvas.itemconfigure(interior_id, width=canvas.winfo_width())
+        canvas.bind('<Configure>', _configure_canvas)
+
+
+class MatchUpRows(tk.Frame):
+    def __init__(self, parent, matches):
+        tk.Frame.__init__(self, parent)
+        frame = tk.Frame(parent)
+        frame.pack(side="top", fill="both")
+        for i, match in enumerate(matches):
+            frame.grid_columnconfigure(0, weight=1)
+
+            hvid = tk.Label(frame, text=match[0].name, font='Helvetica 26')
+            hvid.grid(row=i + 1, column=1, sticky="e")
+            frame.grid_columnconfigure(1, weight=1)
+
+            vs = tk.Label(frame, text="vs", font='Helvetica 20')
+            vs.grid(row=i + 1, column=2)
+            frame.grid_columnconfigure(2, weight=1)
+
+            sort = tk.Label(frame, text=match[1].name, font='Helvetica 26')
+            sort.grid(row=i + 1, column=3, sticky="w")
+            frame.grid_columnconfigure(3, weight=1)
+
+            frame.grid_columnconfigure(4, weight=1)
+            frame.grid_rowconfigure(i + 1, weight=1)
+
+class MatchUpHeader(tk.Frame):
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+        names = ["", "Hvid", "", "Sort", ""]
+        frame = tk.Frame(parent)
         frame.pack(side="top", fill="both")
         for i, title in enumerate(names):
             l = tk.Label(frame, text=title, font='Helvetica 30 bold')
@@ -258,24 +335,6 @@ class PlayersFooter(tk.Frame):
             else:
                 l.grid(row=0, column=i)
             frame.grid_columnconfigure(i, weight=1)
-        for i, match in  enumerate(matches):
-            frame.grid_columnconfigure(0, weight=1)
-
-            hvid = tk.Label(frame, text=match[0].name, font='Helvetica 26')
-            hvid.grid(row=i+1, column=1, sticky="e")
-            frame.grid_columnconfigure(1, weight=1)
-
-            vs = tk.Label(frame, text="vs", font='Helvetica 20')
-            vs.grid(row=i + 1, column=2)
-            frame.grid_columnconfigure(2, weight=1)
-
-            sort = tk.Label(frame, text=match[1].name, font='Helvetica 26')
-            sort.grid(row=i+1, column=3, sticky="w")
-            frame.grid_columnconfigure(3, weight=1)
-
-            frame.grid_columnconfigure(4, weight=1)
-            frame.grid_rowconfigure(i+1, weight=1)
-
 
 
 root = tk.Tk()
