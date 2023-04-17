@@ -3,6 +3,8 @@ from typing import List
 import random
 import math
 from tkinter.constants import *
+from PIL import ImageTk, Image
+from tkextrafont import Font
 
 class Player():
     def __init__(self, name, rating):
@@ -48,6 +50,8 @@ class MatchMaker:
                     opponent = random.choice(not_played)
             current.previously_played.append(opponent)
             opponent.previously_played.append(current)
+            current.previously_played = current.previously_played[-5:]
+            opponent.previously_played = opponent.previously_played[-5:]
             players_with_known.remove(opponent)
             self.known_players.update({current.name: current, opponent.name: opponent})
             pairings.append([current, opponent])
@@ -241,44 +245,50 @@ class PlayersFooter(tk.Frame):
     def new_round(self):
         entries = list(filter(lambda x: len(x[0]) > 0 and x[1] >= 0 and not x[2], self.get()))
         players = list(map(lambda x: Player(x[0], x[1]), entries))
-        matches = self.matchmaker.get_matches(players)
         round = self.matchmaker.get_round()
-        newWindow = tk.Toplevel(self)
-        newWindow.geometry("1920x1080")
-        newWindow.title(f"Runde {round}")
-        names = ["","Hvid", "", "Sort",""]
-        frame = tk.Frame(newWindow)
-        frame.pack(side="top", fill="both")
-        for i, title in enumerate(names):
-            l = tk.Label(frame, text=title, font='Helvetica 30 bold')
-            if i == 1:
-                l.grid(row=0, column=i, sticky="e")
-            elif i == 3:
-                l.grid(row=0, column=i, sticky="w")
-            else:
-                l.grid(row=0, column=i)
-            frame.grid_columnconfigure(i, weight=1)
-        for i, match in  enumerate(matches):
-            frame.grid_columnconfigure(0, weight=1)
+        win = tk.Toplevel(self)
+        win.geometry("1280x720")
+        win.title(f"Runde {round}")
+        bg = ImageTk.PhotoImage(file="bg.png")
+        canvas = tk.Canvas(win, width=700, height=3500)
+        canvas.pack(fill=BOTH, expand=True)
+        canvas.create_image(0, 0, image=bg, anchor='nw')
+        matches = self.matchmaker.get_matches(players)
 
-            hvid = tk.Label(frame, text=match[0].name, font='Helvetica 26')
-            hvid.grid(row=i+1, column=1, sticky="e")
-            frame.grid_columnconfigure(1, weight=1)
+        global width_before
+        width_before = 0
+        global height_before
+        height_before = 0
 
-            vs = tk.Label(frame, text="vs", font='Helvetica 20')
-            vs.grid(row=i + 1, column=2)
-            frame.grid_columnconfigure(2, weight=1)
+        def resize_image(e):
+            global image, resized, image2, height_before, width_before
 
-            sort = tk.Label(frame, text=match[1].name, font='Helvetica 26')
-            sort.grid(row=i+1, column=3, sticky="w")
-            frame.grid_columnconfigure(3, weight=1)
+            if e.height != height_before or e.width != width_before:
+                # open image to resize it
+                image = Image.open("bg.png")
+                # resize the image with width and height of root
+                resized = image.resize((e.width, e.height), Image.LANCZOS)
 
-            frame.grid_columnconfigure(4, weight=1)
-            frame.grid_rowconfigure(i+1, weight=1)
-
+                image2 = ImageTk.PhotoImage(resized)
+                canvas.create_image(0, 0, image=image2, anchor='nw')
+                canvas.create_text(math.floor(e.width*2/6), math.floor(e.height*1/15), anchor="center", text="Hvid", font=("Josefin Sans", 36), fill='#FFFFFF')
+                canvas.create_text(math.floor(e.width*4/6), math.floor(e.height*1/15), anchor="center", text="Sort", font=("Josefin Sans", 36), fill='#FFFFFF')
+                for i, match in enumerate(matches):
+                    canvas.create_text(math.floor(e.width * 1 / 6), math.floor(e.height * 2 / 15)+i*45, anchor="center",
+                                       text=f"Bræt {i+1}", font=("Josefin Sans", 26), fill='#FFFFFF')
+                    canvas.create_text(math.floor(e.width * 2 / 6), math.floor(e.height * 2 / 15)+i*45, anchor="center",
+                                       text=f"({match[0].rating}) {match[0].name}", font=("Josefin Sans", 26), fill='#FFFFFF')
+                    canvas.create_text(math.floor(e.width * 3 / 6), math.floor(e.height * 2 / 15)+i*45, anchor="center",
+                                       text=f"vs", font=("Josefin Sans", 26), fill='#FFFFFF')
+                    canvas.create_text(math.floor(e.width * 4 / 6), math.floor(e.height * 2 / 15)+i*45, anchor="center",
+                                       text=f"{match[1].name} ({match[1].rating})", font=("Josefin Sans", 26), fill='#FFFFFF')
+                width_before = e.width
+                height_before = e.height
+        win.bind("<Configure>", resize_image)
 
 
 root = tk.Tk()
+JOSEFIN = Font(file="JosefinSans-Bold.ttf", family="Josefin Sans")
 root.geometry("1000x500")
 root.title("Bønderne MatchMaker by ChrIT")
 PlayersUI(root)
