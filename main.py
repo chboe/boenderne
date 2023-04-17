@@ -300,23 +300,28 @@ class MatchUpBody(tk.Frame):
 class MatchUpRows(tk.Frame):
     def __init__(self, parent, matches):
         tk.Frame.__init__(self, parent)
-        for i, match in enumerate(matches):
-            parent.grid_columnconfigure(0, weight=1)
+        self.frame = tk.Frame(parent)
+        self.matches = matches
 
-            hvid = tk.Label(parent, text=match[0].name, font='Helvetica 26')
+    def add_rows(self):
+        for i, match in enumerate(self.matches):
+            self.frame.grid_columnconfigure(0, weight=1)
+
+            hvid = tk.Label(self.frame, text=match[0].name, font='Helvetica 26')
             hvid.grid(row=i + 1, column=1, sticky="e")
-            parent.grid_columnconfigure(1, weight=1)
+            self.frame.grid_columnconfigure(1, weight=1)
 
-            vs = tk.Label(parent, text="vs", font='Helvetica 20')
+            vs = tk.Label(self.frame, text="vs", font='Helvetica 20')
             vs.grid(row=i + 1, column=2)
-            parent.grid_columnconfigure(2, weight=1)
+            self.frame.grid_columnconfigure(2, weight=1)
 
-            sort = tk.Label(parent, text=match[1].name, font='Helvetica 26')
+            sort = tk.Label(self.frame, text=match[1].name, font='Helvetica 26')
             sort.grid(row=i + 1, column=3, sticky="w")
-            parent.grid_columnconfigure(3, weight=1)
+            self.frame.grid_columnconfigure(3, weight=1)
 
-            parent.grid_columnconfigure(4, weight=1)
-            parent.grid_rowconfigure(i + 1, weight=1)
+            self.frame.grid_columnconfigure(4, weight=1)
+            self.frame.grid_rowconfigure(i + 1, weight=1)
+
 
 class MatchUpHeader(tk.Frame):
     def __init__(self, parent):
