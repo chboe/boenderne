@@ -6,6 +6,8 @@ name = "pypi"
 [packages]
 tk = "*"
 pyinstaller = "*"
+tkextrafont = "*"
+pillow = "*"
 
 [dev-packages]
 

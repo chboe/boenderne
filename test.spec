@@ -5,10 +5,10 @@ block_cipher = None
 
 
 a = Analysis(
-    ['main.py'],
+    ['test.py'],
     pathex=[],
     binaries=[],
-    datas=[('JosefinSans-Bold.ttf', '.'), ('bg.png', '.')],
+    datas=[('data.txt', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -28,7 +28,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='main',
+    name='test',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -5,6 +5,16 @@ import math
 from tkinter.constants import *
 from PIL import ImageTk, Image
 from tkextrafont import Font
+import sys, os
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 class Player():
     def __init__(self, name, rating):
@@ -249,7 +259,7 @@ class PlayersFooter(tk.Frame):
         win = tk.Toplevel(self)
         win.geometry("1280x720")
         win.title(f"Runde {round}")
-        bg = ImageTk.PhotoImage(file="bg.png")
+        bg = ImageTk.PhotoImage(file=resource_path("bg.png"))
         canvas = tk.Canvas(win, width=700, height=3500)
         canvas.pack(fill=BOTH, expand=True)
         canvas.create_image(0, 0, image=bg, anchor='nw')
@@ -265,7 +275,7 @@ class PlayersFooter(tk.Frame):
 
             if e.height != height_before or e.width != width_before:
                 # open image to resize it
-                image = Image.open("bg.png")
+                image = Image.open(resource_path("bg.png"))
                 # resize the image with width and height of root
                 resized = image.resize((e.width, e.height), Image.LANCZOS)
 
@@ -288,7 +298,7 @@ class PlayersFooter(tk.Frame):
 
 
 root = tk.Tk()
-JOSEFIN = Font(file="JosefinSans-Bold.ttf", family="Josefin Sans")
+#JOSEFIN = Font(file=resource_path("JosefinSans-Bold.ttf"), family="Josefin Sans")
 root.geometry("1000x500")
 root.title("Bønderne MatchMaker by ChrIT")
 PlayersUI(root)
