@@ -4,7 +4,6 @@ import random
 import math
 from tkinter.constants import *
 from PIL import ImageTk, Image
-from tkextrafont import Font
 import sys, os
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -17,7 +16,8 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 class Player():
-    def __init__(self, name, rating):
+    def __init__(self, id, name, rating):
+        self.id = id
         self.name = name
         self.rating = rating
         self.previously_played = []
@@ -34,7 +34,7 @@ class MatchMaker:
     def players_with_known(self, players):
         players_with_known = []
         for player in players:
-            known_player = self.known_players.get(player.name)
+            known_player = self.known_players.get(player.id)
             if known_player is None:
                 known_player = player
             players_with_known.append(known_player)
@@ -51,10 +51,11 @@ class MatchMaker:
             weightings = list(map(lambda x: min(max(10 * math.e ** (-(x / 800) ** 2), 1), 10), rating_differences))
             opponent = random.choices(players_with_known, weights=weightings, k=1)[0]
             i = 0
-            while opponent.name in current.previously_played and i < 10:
+            prev_played = list(map(lambda x: x.id, current.previously_played))
+            while opponent.id in prev_played and i < 0:
                 opponent = random.choices(players_with_known, weights=weightings, k=1)[0]
                 i += 1
-            if opponent.name in list(map(lambda x: x.name, current.previously_played)):
+            if opponent.id in list(map(lambda x: x.id, current.previously_played)):
                 not_played = list(set(players_with_known) - set(current.previously_played))
                 if len(not_played) > 0:
                     opponent = random.choice(not_played)
@@ -63,11 +64,11 @@ class MatchMaker:
             current.previously_played = current.previously_played[-5:]
             opponent.previously_played = opponent.previously_played[-5:]
             players_with_known.remove(opponent)
-            self.known_players.update({current.name: current, opponent.name: opponent})
+            self.known_players.update({current.id: current, opponent.id: opponent})
             pairings.append([current, opponent])
 
         if len(players_with_known) == 1:
-            pairings.append([players_with_known[0], Player("Oversidder", 0)])
+            pairings.append([players_with_known[0], Player(-1, "Oversidder", 0)])
         return pairings
 
 
@@ -79,6 +80,7 @@ class PlayersBody(tk.Frame):
         self.buttons = []
         self.rows = 16
         self.columns = 4
+        self.current_id = 0
 
         # create the table of widgets
         for row in range(self.rows):
@@ -109,9 +111,10 @@ class PlayersBody(tk.Frame):
         skipping = tk.BooleanVar()
         skip = tk.Checkbutton(self, variable=skipping, onvalue=True, offvalue=False)
 
-        self.entries.insert(row, [name, rating, (skipping, skip)])
+        self.entries.insert(row, [name, rating, (skipping, skip), self.current_id])
+        self.current_id += 1
         for entry in self.entries:
-            name, rating, (skipping, skip) = entry
+            name, rating, (skipping, skip), id = entry
             name.grid_forget()
             rating.grid_forget()
             skip.grid_forget()
@@ -119,7 +122,7 @@ class PlayersBody(tk.Frame):
             button_frame.grid_forget()
         self.buttons = []
         for i, entry in enumerate(self.entries):
-            name, rating, (skipping, skip) = entry
+            name, rating, (skipping, skip), id = entry
             button_frame = self.button_frame(i + 1)
             self.buttons.append(button_frame)
             name.grid(row=i, column=0, stick="nsew")
@@ -159,6 +162,7 @@ class PlayersBody(tk.Frame):
             else:
                 current_row.append(int(rating))
             current_row.append(entry[2][0].get())
+            current_row.append(entry[3])
             result.append(current_row)
         return result
 
@@ -254,7 +258,7 @@ class PlayersFooter(tk.Frame):
 
     def new_round(self):
         entries = list(filter(lambda x: len(x[0]) > 0 and x[1] >= 0 and not x[2], self.get()))
-        players = list(map(lambda x: Player(x[0], x[1]), entries))
+        players = list(map(lambda x: Player(x[3], x[0], x[1]), entries))
         round = self.matchmaker.get_round()
         win = tk.Toplevel(self)
         win.geometry("1280x720")
