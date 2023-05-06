@@ -1,34 +1,37 @@
-from tkinter import *
-from tkinter import font
+import sys, os
+import numpy as np
+import pandas as pd
 
-root = Tk()
-root.title('Font Families')
-fonts=list(font.families())
-fonts.sort()
+SAVE_PATH = os.path.expanduser('Documents/Boenderne')
 
-def populate(frame):
-    '''Put in the fonts'''
-    listnumber = 1
-    for item in fonts:
-        label = "listlabel" + str(listnumber)
-        label = Label(frame,text=item,font=(item, 16)).pack()
-        listnumber += 1
 
-def onFrameConfigure(canvas):
-    '''Reset the scroll region to encompass the inner frame'''
-    canvas.configure(scrollregion=canvas.bbox("all"))
+PLAYERS = pd.DataFrame({
+    'id': pd.Series(dtype='str'),
+    'name': pd.Series(dtype='str'),
+    'rating': pd.Series(dtype='int'),
+    'oversidder': pd.Series(dtype='boolean')
+})
+MATCHES = pd.DataFrame({
+    'p1Id': pd.Series(dtype='str'),
+    'p2Id': pd.Series(dtype='str'),
+    'winnerId': pd.Series(dtype='str'),
+    'p1Rating': pd.Series(dtype='int'),
+    'p2Rating': pd.Series(dtype='int')
+})
 
-canvas = Canvas(root, borderwidth=0, background="#ffffff")
-frame = Frame(canvas, background="#ffffff")
-vsb = Scrollbar(root, orient="vertical", command=canvas.yview)
-canvas.configure(yscrollcommand=vsb.set)
+def load_db():
+    if os.path.exists(os.path.join(SAVE_PATH, 'PLAYERS.csv')):
+        PLAYERS = pd.read_csv(os.path.join(SAVE_PATH, 'PLAYERS.csv'))
+    if os.path.exists(os.path.join(SAVE_PATH, 'MATCHES.csv')):
+        MATCHES = pd.read_csv(os.path.join(SAVE_PATH, 'MATCHES.csv'))
 
-vsb.pack(side="right", fill="y")
-canvas.pack(side="left", fill="both", expand=True)
-canvas.create_window((4,4), window=frame, anchor="nw")
+def save_db():
+    if not os.path.isdir(SAVE_PATH):
+        os.makedirs(SAVE_PATH)
 
-frame.bind("<Configure>", lambda event, canvas=canvas: onFrameConfigure(canvas))
+    PLAYERS.to_csv(path_or_buf=os.path.join(SAVE_PATH, 'PLAYERS.csv'))
+    MATCHES.to_csv(path_or_buf=os.path.join(SAVE_PATH, 'MATCHES.csv'))
 
-populate(frame)
-
-root.mainloop()
+print(os.path.join(SAVE_PATH, 'PLAYERS.csv'))
+#load_db()
+#save_db()

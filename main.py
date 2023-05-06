@@ -5,6 +5,42 @@ import math
 from tkinter.constants import *
 from PIL import ImageTk, Image
 import sys, os
+import numpy as np
+import pandas as pd
+import uuid
+
+SESSION_ID = str(uuid.uuid4)
+SAVE_PATH = os.path.expanduser('Documents/Boenderne')
+PLAYERS = pd.DataFrame({
+    'id': pd.Series(dtype='str'),
+    'name': pd.Series(dtype='str'),
+    'rating': pd.Series(dtype='int'),
+    'oversidder': pd.Series(dtype='boolean')
+})
+MATCHES = pd.DataFrame({
+    'sessionId' : pd.Series(dtype='str'),
+    'round' : pd.Series(dtype='int'),
+    'p1Id': pd.Series(dtype='str'),
+    'p2Id': pd.Series(dtype='str'),
+    'winnerId': pd.Series(dtype='str'),
+    'p1Rating': pd.Series(dtype='int'),
+    'p2Rating': pd.Series(dtype='int')
+})
+
+def load_db():
+    if os.path.exists(os.path.join(SAVE_PATH, 'PLAYERS.csv')):
+        PLAYERS = pd.read_csv(os.path.join(SAVE_PATH, 'PLAYERS.csv'))
+    if os.path.exists(os.path.join(SAVE_PATH, 'MATCHES.csv')):
+        MATCHES = pd.read_csv(os.path.join(SAVE_PATH, 'MATCHES.csv'))
+
+def save_db():
+    if not os.path.isdir(SAVE_PATH):
+        os.makedirs(SAVE_PATH)
+
+    PLAYERS.to_csv(path_or_buf=os.path.join(SAVE_PATH, 'PLAYERS.csv'))
+    MATCHES.to_csv(path_or_buf=os.path.join(SAVE_PATH, 'MATCHES.csv'))
+
+
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
@@ -20,7 +56,6 @@ class Player():
         self.id = id
         self.name = name
         self.rating = rating
-        self.previously_played = []
 
 
 class MatchMaker:
@@ -31,44 +66,39 @@ class MatchMaker:
     def get_round(self):
         return self.round
 
-    def players_with_known(self, players):
-        players_with_known = []
-        for player in players:
-            known_player = self.known_players.get(player.id)
-            if known_player is None:
-                known_player = player
-            players_with_known.append(known_player)
-        return players_with_known
+    def get_not_played(self, pId):
+        base = PLAYERS.loc(not PLAYERS['oversidder'])
+        opponents_as_p1 = list(base.loc(MATCHES['sessionId'] == SESSION_ID and MATCHES['p1Id'] == pId)['p2Id'].values)
+        opponents_as_p2 = list(base.loc(MATCHES['sessionId'] == SESSION_ID and MATCHES['p2Id'] == pId)['p1Id'].values)
+        all_opponents = opponents_as_p1 + opponents_as_p2
+        return base.loc(base['id'] not in all_opponents)
 
-    def get_matches(self, players: List[Player]):
+    def has_played_recently(self, p1Id, p2Id):
+        recent_matches = MATCHES.loc(MATCHES['sessionId'] == SESSION_ID and ((MATCHES['p1Id'] == p1Id and MATCHES['p2Id']) or (MATCHES['p1Id'] == p2Id and MATCHES['p2Id'] == p1Id)) and  (self.round - MATCHES['round'])<5)
+        return len(recent_matches.index)
+
+    def get_matches(self):
         self.round += 1
-        players_with_known = self.players_with_known(players)
+        players = list(map(lambda x: Player(x[0], x[1], x[2]), PLAYERS.loc(not PLAYERS['oversidder']).values.tolist()))
         pairings = []
-        while len(players_with_known) > 1:
-            current = random.choice(players_with_known)
-            players_with_known.remove(current)
-            rating_differences = list(map(lambda x: abs(x.rating - current.rating), players_with_known))
+        while len(players) > 1:
+            current = random.choice(players)
+            players.remove(current)
+            rating_differences = list(map(lambda x: abs(x.rating - current.rating), players))
             weightings = list(map(lambda x: min(max(10 * math.e ** (-(x / 800) ** 2), 1), 10), rating_differences))
-            opponent = random.choices(players_with_known, weights=weightings, k=1)[0]
+            opponent = random.choices(players, weights=weightings, k=1)[0]
             i = 0
-            prev_played = list(map(lambda x: x.id, current.previously_played))
-            while opponent.id in prev_played and i < 0:
-                opponent = random.choices(players_with_known, weights=weightings, k=1)[0]
+            while self.has_played_recently(current.id, opponent.id) and i < 0:
+                opponent = random.choices(players, weights=weightings, k=1)[0]
                 i += 1
-            if opponent.id in list(map(lambda x: x.id, current.previously_played)):
-                not_played = list(set(players_with_known) - set(current.previously_played))
-                if len(not_played) > 0:
+            if self.has_played_recently(current.id, opponent.id):
+                if len(self.get_not_played(current.id)) > 0:
                     opponent = random.choice(not_played)
-            current.previously_played.append(opponent)
-            opponent.previously_played.append(current)
-            current.previously_played = current.previously_played[-5:]
-            opponent.previously_played = opponent.previously_played[-5:]
-            players_with_known.remove(opponent)
-            self.known_players.update({current.id: current, opponent.id: opponent})
+            players.remove(opponent)
             pairings.append([current, opponent])
 
-        if len(players_with_known) == 1:
-            pairings.append([players_with_known[0], Player(-1, "Oversidder", 0)])
+        if len(players) == 1:
+            pairings.append([players[0], Player(-1, "Oversidder", 0)])
         return pairings
 
 
@@ -301,6 +331,8 @@ class PlayersFooter(tk.Frame):
         win.bind("<Configure>", resize_image)
 
 
+load_db()
+save_db()
 root = tk.Tk()
 #JOSEFIN = Font(file=resource_path("JosefinSans-Bold.ttf"), family="Josefin Sans")
 root.geometry("1000x500")
