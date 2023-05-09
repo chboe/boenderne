@@ -8,8 +8,9 @@ import sys, os
 import numpy as np
 import pandas as pd
 import uuid
+from enum import Enum
 
-SESSION_ID = str(uuid.uuid4)
+SESSION_ID = str(uuid.uuid4())
 SAVE_PATH = os.path.expanduser('Documents/Boenderne')
 PLAYERS = pd.DataFrame({
     'id': pd.Series(dtype='str'),
@@ -18,8 +19,8 @@ PLAYERS = pd.DataFrame({
     'oversidder': pd.Series(dtype='boolean')
 })
 MATCHES = pd.DataFrame({
-    'sessionId' : pd.Series(dtype='str'),
-    'round' : pd.Series(dtype='int'),
+    'sessionId': pd.Series(dtype='str'),
+    'round': pd.Series(dtype='int'),
     'p1Id': pd.Series(dtype='str'),
     'p2Id': pd.Series(dtype='str'),
     'winnerId': pd.Series(dtype='str'),
@@ -27,19 +28,36 @@ MATCHES = pd.DataFrame({
     'p2Rating': pd.Series(dtype='int')
 })
 
+
 def load_db():
+    global PLAYERS
+    global MATCHES
     if os.path.exists(os.path.join(SAVE_PATH, 'PLAYERS.csv')):
-        PLAYERS = pd.read_csv(os.path.join(SAVE_PATH, 'PLAYERS.csv'))
+        PLAYERS = pd.read_csv(os.path.join(SAVE_PATH, 'PLAYERS.csv'), index_col=0, dtype={'id': str, 'name': str, 'rating': int, 'oversidder': bool})
     if os.path.exists(os.path.join(SAVE_PATH, 'MATCHES.csv')):
-        MATCHES = pd.read_csv(os.path.join(SAVE_PATH, 'MATCHES.csv'))
+        MATCHES = pd.read_csv(os.path.join(SAVE_PATH, 'MATCHES.csv'), index_col=0, dtype={'sessionId': str, 'round': int, 'p1Id': str, 'p2Id': str, 'winnerId': str, 'p1Rating': int, 'p2Rating': int})
+
 
 def save_db():
+    global PLAYERS
+    global MATCHES
+
+    print(PLAYERS)
+    print(MATCHES)
     if not os.path.isdir(SAVE_PATH):
         os.makedirs(SAVE_PATH)
 
     PLAYERS.to_csv(path_or_buf=os.path.join(SAVE_PATH, 'PLAYERS.csv'))
     MATCHES.to_csv(path_or_buf=os.path.join(SAVE_PATH, 'MATCHES.csv'))
 
+class ChessOutcome(Enum):
+    WIN = 1
+    DRAW = 0.5
+    LOSS = 0
+
+def compute_rating_change(p1Rating, p2Rating, outcome: ChessOutcome):
+    e = 1 / (1 + 10^((p2Rating - p1Rating) / 400))
+    return 32*(outcome.value - e)
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -51,11 +69,13 @@ def resource_path(relative_path):
 
     return os.path.join(base_path, relative_path)
 
+
 class Player():
-    def __init__(self, id, name, rating):
+    def __init__(self, id, name, rating, oversidder = False):
         self.id = id
         self.name = name
         self.rating = rating
+        self.oversidder = oversidder
 
 
 class MatchMaker:
@@ -67,19 +87,22 @@ class MatchMaker:
         return self.round
 
     def get_not_played(self, pId):
-        base = PLAYERS.loc(not PLAYERS['oversidder'])
-        opponents_as_p1 = list(base.loc(MATCHES['sessionId'] == SESSION_ID and MATCHES['p1Id'] == pId)['p2Id'].values)
-        opponents_as_p2 = list(base.loc(MATCHES['sessionId'] == SESSION_ID and MATCHES['p2Id'] == pId)['p1Id'].values)
+        base = PLAYERS.loc[PLAYERS['oversidder'] == False]
+        opponents_as_p1 = list(base.loc[(MATCHES['sessionId'] == SESSION_ID) & (MATCHES['p1Id'] == pId)]['p2Id'].values)
+        opponents_as_p2 = list(base.loc[(MATCHES['sessionId'] == SESSION_ID) & (MATCHES['p2Id'] == pId)]['p1Id'].values)
         all_opponents = opponents_as_p1 + opponents_as_p2
-        return base.loc(base['id'] not in all_opponents)
+        return list(base.loc[base['id'] not in all_opponents]['id'].values)
 
     def has_played_recently(self, p1Id, p2Id):
-        recent_matches = MATCHES.loc(MATCHES['sessionId'] == SESSION_ID and ((MATCHES['p1Id'] == p1Id and MATCHES['p2Id']) or (MATCHES['p1Id'] == p2Id and MATCHES['p2Id'] == p1Id)) and  (self.round - MATCHES['round'])<5)
-        return len(recent_matches.index)
+        print(SESSION_ID)
+        recent_matches = MATCHES.loc[(MATCHES['sessionId'] == SESSION_ID) & (
+                ((MATCHES['p1Id'] == p1Id) & (MATCHES['p2Id'] == p2Id)) |
+                ((MATCHES['p1Id'] == p2Id) & (MATCHES['p2Id'] == p1Id))) & (self.round - MATCHES['round']) < 5]
+        return len(recent_matches.index) > 0
 
     def get_matches(self):
         self.round += 1
-        players = list(map(lambda x: Player(x[0], x[1], x[2]), PLAYERS.loc(not PLAYERS['oversidder']).values.tolist()))
+        players = list(map(lambda x: Player(x[0], x[1], x[2]), list(PLAYERS.loc[PLAYERS['oversidder'] == False].values)))
         pairings = []
         while len(players) > 1:
             current = random.choice(players)
@@ -93,12 +116,12 @@ class MatchMaker:
                 i += 1
             if self.has_played_recently(current.id, opponent.id):
                 if len(self.get_not_played(current.id)) > 0:
-                    opponent = random.choice(not_played)
+                    opponent = random.choice(self.get_not_played(current.id))
             players.remove(opponent)
             pairings.append([current, opponent])
 
         if len(players) == 1:
-            pairings.append([players[0], Player(-1, "Oversidder", 0)])
+            pairings.append([players[0], Player("Oversidder", "Oversidder", 0)])
         return pairings
 
 
@@ -108,19 +131,31 @@ class PlayersBody(tk.Frame):
 
         self.entries = []
         self.buttons = []
-        self.rows = 16
         self.columns = 4
-        self.current_id = 0
 
         # create the table of widgets
-        for row in range(self.rows):
-            self.add_row(row)
+        self.refresh_entries()
 
         # adjust column weights so they all expand equally
         for column in range(self.columns):
             self.grid_columnconfigure(column, weight=1)
         # designate a final, empty row to fill up any extra space
         # self.grid_rowconfigure(self.rows, weight=1)
+
+    def refresh_df(self):
+        global PLAYERS
+        PLAYERS.drop(PLAYERS.index, inplace=True)
+        for name, rating, skipping, id in self.get():
+            new_row = pd.DataFrame({'id': id, 'name': name, 'rating': rating, 'oversidder': skipping}, index=[0])
+            PLAYERS = pd.concat([new_row, PLAYERS.loc[:]]).reset_index(drop=True)
+        PLAYERS.sort_values(by=['name'], inplace=True)
+
+    def refresh_entries(self):
+        if len(PLAYERS.index) > 0:
+            for i, player in enumerate(list(map(lambda x: Player(x[0], x[1], x[2], x[3]), list(PLAYERS.values)))):
+                self.add_row(i, player)
+        else:
+            self.add_row(0)
 
     def button_frame(self, i):
         button_frame = tk.Frame(self)
@@ -130,29 +165,36 @@ class PlayersBody(tk.Frame):
         add.pack(side="left")
         return button_frame
 
-    def add_row(self, row):
+    def add_row(self, row, player=None):
         # Name entry
         name = tk.Entry(self, validate="key")
+        if player is not None:
+            name.insert(0, player.name)
 
         # Rating entry
         rating = tk.Entry(self, validate="key", validatecommand=(self.register(self.validate_rating), "%P"))
+        if player is not None:
+            rating.insert(0, player.rating)
 
         # Skip entry
         skipping = tk.BooleanVar()
         skip = tk.Checkbutton(self, variable=skipping, onvalue=True, offvalue=False)
+        if player is not None:
+            skipping.set(player.oversidder)
 
-        self.entries.insert(row, [name, rating, (skipping, skip), self.current_id])
-        self.current_id += 1
-        for entry in self.entries:
-            name, rating, (skipping, skip), id = entry
+        currId = str(uuid.uuid4())
+        if player is not None:
+            currId = player.id
+
+        self.entries.insert(row, [name, rating, skip, skipping, currId])
+        for name, rating, skip, skipping, id in self.entries:
             name.grid_forget()
             rating.grid_forget()
             skip.grid_forget()
         for button_frame in self.buttons:
             button_frame.grid_forget()
         self.buttons = []
-        for i, entry in enumerate(self.entries):
-            name, rating, (skipping, skip), id = entry
+        for i, (name, rating, skip, skipping, id) in enumerate(self.entries):
             button_frame = self.button_frame(i + 1)
             self.buttons.append(button_frame)
             name.grid(row=i, column=0, stick="nsew")
@@ -162,8 +204,7 @@ class PlayersBody(tk.Frame):
 
     def delete_row(self, i):
         if len(self.entries) > 1:
-            for entry in self.entries:
-                name, rating, (skipping, skip) = entry
+            for name, rating, skip, id in self.entries:
                 name.grid_forget()
                 rating.grid_forget()
                 skip.grid_forget()
@@ -171,8 +212,7 @@ class PlayersBody(tk.Frame):
                 button_frame.grid_forget()
             self.buttons = []
             del self.entries[i - 1]
-            for i, entry in enumerate(self.entries):
-                name, rating, (skipping, skip) = entry
+            for i, (name, rating, skip, id) in enumerate(self.entries):
                 button_frame = self.button_frame(i + 1)
                 self.buttons.append(button_frame)
                 name.grid(row=i, column=0, stick="nsew")
@@ -183,16 +223,16 @@ class PlayersBody(tk.Frame):
     def get(self):
         '''Return a list of lists, containing the data in the table'''
         result = []
-        for entry in self.entries:
+        for name, rating, skip, skipping, id in self.entries:
             current_row = []
-            current_row.append(entry[0].get())
-            rating = entry[1].get()
+            current_row.append(name.get())
+            rating = rating.get()
             if not (len(rating) > 0):
                 current_row.append(0)
             else:
                 current_row.append(int(rating))
-            current_row.append(entry[2][0].get())
-            current_row.append(entry[3])
+            current_row.append(skipping.get())
+            current_row.append(id)
             result.append(current_row)
         return result
 
@@ -217,6 +257,7 @@ class VerticalScrolledFrame(tk.Frame):
     * Construct and pack/place/grid normally.
     * This frame only allows vertical scrolling.
     """
+
     def __init__(self, parent, *args, **kw):
         tk.Frame.__init__(self, parent, *args, **kw)
 
@@ -246,12 +287,14 @@ class VerticalScrolledFrame(tk.Frame):
             if interior.winfo_reqwidth() != canvas.winfo_width():
                 # Update the canvas's width to fit the inner frame.
                 canvas.config(width=interior.winfo_reqwidth())
+
         interior.bind('<Configure>', _configure_interior)
 
         def _configure_canvas(event):
             if interior.winfo_reqwidth() != canvas.winfo_width():
                 # Update the inner frame's width to fill the canvas.
                 canvas.itemconfigure(interior_id, width=canvas.winfo_width())
+
         canvas.bind('<Configure>', _configure_canvas)
 
 
@@ -260,10 +303,60 @@ class PlayersUI(tk.Frame):
         tk.Frame.__init__(self, parent)
         header = PlayersHeader(parent)
         body = VerticalScrolledFrame(parent)
-        footer = PlayersFooter(parent, body.interior.get)
+        footer = PlayersFooter(parent, body.interior)
         header.pack(side="top", fill="both")  # , expand=True)
         body.pack(side="top", fill="both", expand=True)
         footer.pack(side="top", fill="both")  # , expand=True)
+
+class ResultsFrame(tk.Frame):
+    def __init__(self, parent, matches, body):
+        tk.Frame.__init__(self, parent)
+        self.entries = []
+        self.body = body
+        p1Header = tk.Label(self, text="Spiller 1")
+        p1Header.grid(row=0, column=1)
+        drawHeader = tk.Label(self, text="Uafgjort")
+        drawHeader.grid(row=0, column=3)
+        p2Header = tk.Label(self, text="Spiller 2")
+        p2Header.grid(row=0, column=5)
+        for i in range(7):
+            self.grid_columnconfigure(i, weight=1)
+        for i, match in enumerate(matches):
+            p1WinVar = tk.BooleanVar()
+            p2WinVar = tk.BooleanVar()
+            drawVar = tk.BooleanVar()
+
+            def reset_p1():
+                p2WinVar.set(False)
+                drawVar.set(False)
+
+            def reset_p2():
+                p1WinVar.set(False)
+                drawVar.set(False)
+
+            def reset_draw():
+                p1WinVar.set(False)
+                p2WinVar.set(False)
+            p1 = tk.Checkbutton(self, variable=p1WinVar, command=reset_p1)
+            p1.grid(row=i+1, column=0, sticky='w')
+            p1Name = tk.Label(self, text=match[0].name)
+            p1Name.grid(row=i+1, column=1)
+            draw = tk.Checkbutton(self, variable=drawVar, command=reset_draw)
+            draw.grid(row=i+1, column=3)
+            p2 = tk.Checkbutton(self, variable=p2WinVar, command=reset_p2)
+            p2.grid(row=i + 1, column=6)
+            p2Name = tk.Label(self, text=match[1].name)
+            p2Name.grid(row=i+1, column=5, sticky='e')
+            self.entries.append([i, p1WinVar, p2WinVar, drawVar])
+
+        self.grid_columnconfigure(0, weight=1)
+        save = tk.Button(self, text="Gem", command=self.save)
+        save.grid(row=len(matches)+1, column=3)
+
+    def save(self):
+        for index, p1WinVar, p2WinVar, drawVar in self.entries:
+            print(index, p1WinVar.get(), p2WinVar.get(), drawVar.get())
+
 
 
 class PlayersHeader(tk.Frame):
@@ -279,25 +372,40 @@ class PlayersHeader(tk.Frame):
 
 
 class PlayersFooter(tk.Frame):
-    def __init__(self, parent, get):
+    def __init__(self, parent, body):
         tk.Frame.__init__(self, parent)
-        self.get = get
+        self.body = body
         self.new_round_btn = tk.Button(self, text="Ny runde", font='Helvetica 16 bold', command=self.new_round)
+        self.save_db_btn = tk.Button(self, text="Gem", font='Helvetica 16 bold', command=self.save)
         self.new_round_btn.pack()
+        self.save_db_btn.pack()
         self.matchmaker = MatchMaker()
+        self.results = None
+        self.prettyView = None
+
+    def save(self):
+        self.body.refresh_df()
+        save_db()
 
     def new_round(self):
-        entries = list(filter(lambda x: len(x[0]) > 0 and x[1] >= 0 and not x[2], self.get()))
-        players = list(map(lambda x: Player(x[3], x[0], x[1]), entries))
+        if (self.results is not None and self.results.winfo_exists() == 1) or (self.prettyView is not None and self.prettyView.winfo_exists() == 1):
+            return
+
+        self.body.refresh_df()
+        matches = self.matchmaker.get_matches()
         round = self.matchmaker.get_round()
-        win = tk.Toplevel(self)
-        win.geometry("1280x720")
-        win.title(f"Runde {round}")
+        self.results = tk.Toplevel()
+        self.results.title(f"Resultater for runde {round}")
+        resFrame = ResultsFrame(self.results, matches)
+        resFrame.pack()
+
+        self.prettyView = tk.Toplevel(self)
+        self.prettyView.geometry("1280x720")
+        self.prettyView.title(f"Runde {round}")
         bg = ImageTk.PhotoImage(file=resource_path("bg.png"))
-        canvas = tk.Canvas(win, width=700, height=3500)
+        canvas = tk.Canvas(self.prettyView, width=700, height=3500)
         canvas.pack(fill=BOTH, expand=True)
         canvas.create_image(0, 0, image=bg, anchor='nw')
-        matches = self.matchmaker.get_matches(players)
 
         global width_before
         width_before = 0
@@ -315,26 +423,33 @@ class PlayersFooter(tk.Frame):
 
                 image2 = ImageTk.PhotoImage(resized)
                 canvas.create_image(0, 0, image=image2, anchor='nw')
-                canvas.create_text(math.floor(e.width*2/6), math.floor(e.height*1/15), anchor="center", text="Hvid", font=("Josefin Sans", 36), fill='#FFFFFF')
-                canvas.create_text(math.floor(e.width*4/6), math.floor(e.height*1/15), anchor="center", text="Sort", font=("Josefin Sans", 36), fill='#FFFFFF')
+                canvas.create_text(math.floor(e.width * 2 / 6), math.floor(e.height * 1 / 15), anchor="center",
+                                   text="Hvid", font=("Josefin Sans", 36), fill='#FFFFFF')
+                canvas.create_text(math.floor(e.width * 4 / 6), math.floor(e.height * 1 / 15), anchor="center",
+                                   text="Sort", font=("Josefin Sans", 36), fill='#FFFFFF')
                 for i, match in enumerate(matches):
-                    canvas.create_text(math.floor(e.width * 1 / 6), math.floor(e.height * 2 / 15)+i*45, anchor="center",
-                                       text=f"Bræt {i+1}", font=("Josefin Sans", 26), fill='#FFFFFF')
-                    canvas.create_text(math.floor(e.width * 2 / 6), math.floor(e.height * 2 / 15)+i*45, anchor="center",
-                                       text=f"({match[0].rating}) {match[0].name}", font=("Josefin Sans", 26), fill='#FFFFFF')
-                    canvas.create_text(math.floor(e.width * 3 / 6), math.floor(e.height * 2 / 15)+i*45, anchor="center",
+                    canvas.create_text(math.floor(e.width * 1 / 6), math.floor(e.height * 2 / 15) + i * 45,
+                                       anchor="center",
+                                       text=f"Bræt {i + 1}", font=("Josefin Sans", 26), fill='#FFFFFF')
+                    canvas.create_text(math.floor(e.width * 2 / 6), math.floor(e.height * 2 / 15) + i * 45,
+                                       anchor="center",
+                                       text=f"({match[0].rating}) {match[0].name}", font=("Josefin Sans", 26),
+                                       fill='#FFFFFF')
+                    canvas.create_text(math.floor(e.width * 3 / 6), math.floor(e.height * 2 / 15) + i * 45,
+                                       anchor="center",
                                        text=f"vs", font=("Josefin Sans", 26), fill='#FFFFFF')
-                    canvas.create_text(math.floor(e.width * 4 / 6), math.floor(e.height * 2 / 15)+i*45, anchor="center",
-                                       text=f"{match[1].name} ({match[1].rating})", font=("Josefin Sans", 26), fill='#FFFFFF')
+                    canvas.create_text(math.floor(e.width * 4 / 6), math.floor(e.height * 2 / 15) + i * 45,
+                                       anchor="center",
+                                       text=f"{match[1].name} ({match[1].rating})", font=("Josefin Sans", 26),
+                                       fill='#FFFFFF')
                 width_before = e.width
                 height_before = e.height
-        win.bind("<Configure>", resize_image)
+
+        self.prettyView.bind("<Configure>", resize_image)
 
 
 load_db()
-save_db()
 root = tk.Tk()
-#JOSEFIN = Font(file=resource_path("JosefinSans-Bold.ttf"), family="Josefin Sans")
 root.geometry("1000x500")
 root.title("Bønderne MatchMaker by ChrIT")
 PlayersUI(root)
