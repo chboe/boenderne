@@ -8,6 +8,8 @@ tk = "*"
 pyinstaller = "*"
 tkextrafont = "*"
 pillow = "*"
+pandas = "*"
+userpaths = "*"
 
 [dev-packages]
 
