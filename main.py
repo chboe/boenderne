@@ -1,14 +1,11 @@
 import tkinter as tk
-from typing import List
 import random
 import math
 from tkinter.constants import *
 from PIL import ImageTk, Image
 import sys, os
-import numpy as np
 import pandas as pd
 import uuid
-from enum import Enum
 
 SESSION_ID = str(uuid.uuid4())
 SAVE_PATH = os.path.expanduser('Documents/Boenderne')
@@ -33,31 +30,29 @@ def load_db():
     global PLAYERS
     global MATCHES
     if os.path.exists(os.path.join(SAVE_PATH, 'PLAYERS.csv')):
-        PLAYERS = pd.read_csv(os.path.join(SAVE_PATH, 'PLAYERS.csv'), index_col=0, dtype={'id': str, 'name': str, 'rating': int, 'oversidder': bool})
+        PLAYERS = pd.read_csv(os.path.join(SAVE_PATH, 'PLAYERS.csv'), index_col=0,
+                              dtype={'id': str, 'name': str, 'rating': int, 'oversidder': bool})
     if os.path.exists(os.path.join(SAVE_PATH, 'MATCHES.csv')):
-        MATCHES = pd.read_csv(os.path.join(SAVE_PATH, 'MATCHES.csv'), index_col=0, dtype={'sessionId': str, 'round': int, 'p1Id': str, 'p2Id': str, 'winnerId': str, 'p1Rating': int, 'p2Rating': int})
+        MATCHES = pd.read_csv(os.path.join(SAVE_PATH, 'MATCHES.csv'), keep_default_na=False, index_col=0,
+                              dtype={'sessionId': str, 'round': int, 'p1Id': str, 'p2Id': str, 'winnerId': str,
+                                     'p1Rating': int, 'p2Rating': int})
 
 
 def save_db():
     global PLAYERS
     global MATCHES
 
-    print(PLAYERS)
-    print(MATCHES)
     if not os.path.isdir(SAVE_PATH):
         os.makedirs(SAVE_PATH)
 
     PLAYERS.to_csv(path_or_buf=os.path.join(SAVE_PATH, 'PLAYERS.csv'))
     MATCHES.to_csv(path_or_buf=os.path.join(SAVE_PATH, 'MATCHES.csv'))
 
-class ChessOutcome(Enum):
-    WIN = 1
-    DRAW = 0.5
-    LOSS = 0
 
-def compute_rating_change(p1Rating, p2Rating, outcome: ChessOutcome):
-    e = 1 / (1 + 10^((p2Rating - p1Rating) / 400))
-    return 32*(outcome.value - e)
+def compute_rating_change(p1Rating, p2Rating, outcome):
+    e = 1 / (1 + 10 ** ((p2Rating - p1Rating) / 400))
+    return max(int(math.floor(32 * (outcome - e))), 0)
+
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -71,7 +66,7 @@ def resource_path(relative_path):
 
 
 class Player():
-    def __init__(self, id, name, rating, oversidder = False):
+    def __init__(self, id, name, rating, oversidder=False):
         self.id = id
         self.name = name
         self.rating = rating
@@ -88,13 +83,15 @@ class MatchMaker:
 
     def get_not_played(self, pId):
         base = PLAYERS.loc[PLAYERS['oversidder'] == False]
-        opponents_as_p1 = list(base.loc[(MATCHES['sessionId'] == SESSION_ID) & (MATCHES['p1Id'] == pId)]['p2Id'].values)
-        opponents_as_p2 = list(base.loc[(MATCHES['sessionId'] == SESSION_ID) & (MATCHES['p2Id'] == pId)]['p1Id'].values)
+        opponents_as_p1 = list(
+            MATCHES.loc[(MATCHES['sessionId'] == SESSION_ID) & (MATCHES['p1Id'] == pId), 'p2Id'].values)
+        opponents_as_p2 = list(
+            MATCHES.loc[(MATCHES['sessionId'] == SESSION_ID) & (MATCHES['p2Id'] == pId), 'p1Id'].values)
         all_opponents = opponents_as_p1 + opponents_as_p2
-        return list(base.loc[base['id'] not in all_opponents]['id'].values)
+        res = list(base.loc[~base['id'].isin(all_opponents), 'id'].values)
+        return res
 
     def has_played_recently(self, p1Id, p2Id):
-        print(SESSION_ID)
         recent_matches = MATCHES.loc[(MATCHES['sessionId'] == SESSION_ID) & (
                 ((MATCHES['p1Id'] == p1Id) & (MATCHES['p2Id'] == p2Id)) |
                 ((MATCHES['p1Id'] == p2Id) & (MATCHES['p2Id'] == p1Id))) & (self.round - MATCHES['round']) < 5]
@@ -102,7 +99,8 @@ class MatchMaker:
 
     def get_matches(self):
         self.round += 1
-        players = list(map(lambda x: Player(x[0], x[1], x[2]), list(PLAYERS.loc[PLAYERS['oversidder'] == False].values)))
+        players = list(
+            map(lambda x: Player(x[0], x[1], x[2]), list(PLAYERS.loc[PLAYERS['oversidder'] == False].values)))
         pairings = []
         while len(players) > 1:
             current = random.choice(players)
@@ -115,8 +113,9 @@ class MatchMaker:
                 opponent = random.choices(players, weights=weightings, k=1)[0]
                 i += 1
             if self.has_played_recently(current.id, opponent.id):
-                if len(self.get_not_played(current.id)) > 0:
-                    opponent = random.choice(self.get_not_played(current.id))
+                not_played = list(filter(lambda x: x.id in self.get_not_played(current.id), players))
+                if len(not_played) > 0:
+                    opponent = random.choice(not_played)
             players.remove(opponent)
             pairings.append([current, opponent])
 
@@ -151,6 +150,15 @@ class PlayersBody(tk.Frame):
         PLAYERS.sort_values(by=['name'], inplace=True)
 
     def refresh_entries(self):
+        for i in range(len(self.entries)):
+            for name, rating, skip, skipping, id in self.entries:
+                name.grid_forget()
+                rating.grid_forget()
+                skip.grid_forget()
+            for button_frame in self.buttons:
+                button_frame.grid_forget()
+            self.buttons = []
+            self.entries = []
         if len(PLAYERS.index) > 0:
             for i, player in enumerate(list(map(lambda x: Player(x[0], x[1], x[2], x[3]), list(PLAYERS.values)))):
                 self.add_row(i, player)
@@ -204,7 +212,7 @@ class PlayersBody(tk.Frame):
 
     def delete_row(self, i):
         if len(self.entries) > 1:
-            for name, rating, skip, id in self.entries:
+            for name, rating, skip, skipping, id in self.entries:
                 name.grid_forget()
                 rating.grid_forget()
                 skip.grid_forget()
@@ -212,7 +220,7 @@ class PlayersBody(tk.Frame):
                 button_frame.grid_forget()
             self.buttons = []
             del self.entries[i - 1]
-            for i, (name, rating, skip, id) in enumerate(self.entries):
+            for i, (name, rating, skip, skipping, id) in enumerate(self.entries):
                 button_frame = self.button_frame(i + 1)
                 self.buttons.append(button_frame)
                 name.grid(row=i, column=0, stick="nsew")
@@ -250,6 +258,7 @@ class PlayersBody(tk.Frame):
             self.bell()
             return False
         return True
+
 
 class VerticalScrolledFrame(tk.Frame):
     """A pure Tkinter scrollable frame that actually works!
@@ -308,11 +317,15 @@ class PlayersUI(tk.Frame):
         body.pack(side="top", fill="both", expand=True)
         footer.pack(side="top", fill="both")  # , expand=True)
 
+
 class ResultsFrame(tk.Frame):
-    def __init__(self, parent, matches, body):
+    def __init__(self, parent, pairings, body, round):
         tk.Frame.__init__(self, parent)
         self.entries = []
+        self.parent = parent
         self.body = body
+        self.round = round
+        self.pairings = pairings
         p1Header = tk.Label(self, text="Spiller 1")
         p1Header.grid(row=0, column=1)
         drawHeader = tk.Label(self, text="Uafgjort")
@@ -321,42 +334,85 @@ class ResultsFrame(tk.Frame):
         p2Header.grid(row=0, column=5)
         for i in range(7):
             self.grid_columnconfigure(i, weight=1)
-        for i, match in enumerate(matches):
-            p1WinVar = tk.BooleanVar()
-            p2WinVar = tk.BooleanVar()
-            drawVar = tk.BooleanVar()
+        for i, match in enumerate(pairings):
+            if match[0].id != 'Oversidder' and match[1].id != 'Oversidder':
+                p1WinVar = tk.BooleanVar()
+                p2WinVar = tk.BooleanVar()
+                drawVar = tk.BooleanVar()
 
-            def reset_p1():
-                p2WinVar.set(False)
-                drawVar.set(False)
+                def reset_p1():
+                    p2WinVar.set(False)
+                    drawVar.set(False)
 
-            def reset_p2():
-                p1WinVar.set(False)
-                drawVar.set(False)
+                def reset_p2():
+                    p1WinVar.set(False)
+                    drawVar.set(False)
 
-            def reset_draw():
-                p1WinVar.set(False)
-                p2WinVar.set(False)
-            p1 = tk.Checkbutton(self, variable=p1WinVar, command=reset_p1)
-            p1.grid(row=i+1, column=0, sticky='w')
-            p1Name = tk.Label(self, text=match[0].name)
-            p1Name.grid(row=i+1, column=1)
-            draw = tk.Checkbutton(self, variable=drawVar, command=reset_draw)
-            draw.grid(row=i+1, column=3)
-            p2 = tk.Checkbutton(self, variable=p2WinVar, command=reset_p2)
-            p2.grid(row=i + 1, column=6)
-            p2Name = tk.Label(self, text=match[1].name)
-            p2Name.grid(row=i+1, column=5, sticky='e')
-            self.entries.append([i, p1WinVar, p2WinVar, drawVar])
+                def reset_draw():
+                    p1WinVar.set(False)
+                    p2WinVar.set(False)
+
+                p1 = tk.Checkbutton(self, variable=p1WinVar, command=reset_p1)
+                p1.grid(row=i + 1, column=0)
+                p1Name = tk.Label(self, text=match[0].name)
+                p1Name.grid(row=i + 1, column=1)
+                draw = tk.Checkbutton(self, variable=drawVar, command=reset_draw)
+                draw.grid(row=i + 1, column=3)
+                p2 = tk.Checkbutton(self, variable=p2WinVar, command=reset_p2)
+                p2.grid(row=i + 1, column=6)
+                p2Name = tk.Label(self, text=match[1].name)
+                p2Name.grid(row=i + 1, column=5)
+                self.entries.append([i, p1WinVar, p2WinVar, drawVar])
 
         self.grid_columnconfigure(0, weight=1)
         save = tk.Button(self, text="Gem", command=self.save)
-        save.grid(row=len(matches)+1, column=3)
+        save.grid(row=len(pairings) + 1, column=3)
 
     def save(self):
-        for index, p1WinVar, p2WinVar, drawVar in self.entries:
-            print(index, p1WinVar.get(), p2WinVar.get(), drawVar.get())
+        global PLAYERS
+        global MATCHES
 
+        if len(self.entries) > 0 and not all(list(map(lambda x: x[1].get() or x[2].get() or x[3].get(), self.entries))):
+            return
+
+        for matchIndex, p1WinVar, p2WinVar, drawVar in self.entries:
+            if p1WinVar.get():
+                winnerId = self.pairings[matchIndex][0].id
+                p1Outcome = 1
+                p2Outcome = 0
+            elif p2WinVar.get():
+                winnerId = self.pairings[matchIndex][1].id
+                p1Outcome = 0
+                p2Outcome = 1
+            else:
+                winnerId = ""
+                p1Outcome = 0.5
+                p2Outcome = 0.5
+
+            new_row = pd.DataFrame({
+                'sessionId': SESSION_ID,
+                'round': self.round,
+                'p1Id': self.pairings[matchIndex][0].id,
+                'p2Id': self.pairings[matchIndex][1].id,
+                'winnerId': winnerId,
+                'p1Rating': self.pairings[matchIndex][0].rating,
+                'p2Rating': self.pairings[matchIndex][1].rating}, index=[0])
+            MATCHES = pd.concat([new_row, MATCHES.loc[:]]).reset_index(drop=True)
+
+            if 'Oversidder' != self.pairings[matchIndex][0].id and 'Oversidder' != self.pairings[matchIndex][1].id:
+                p1NewRating = compute_rating_change(self.pairings[matchIndex][0].rating,
+                                                    self.pairings[matchIndex][1].rating, p1Outcome)
+                p2NewRating = compute_rating_change(self.pairings[matchIndex][1].rating,
+                                                    self.pairings[matchIndex][0].rating, p2Outcome)
+                PLAYERS.loc[PLAYERS['id'] == self.pairings[matchIndex][0].id, 'rating'] = self.pairings[matchIndex][
+                                                                                              0].rating + p1NewRating
+                PLAYERS.loc[PLAYERS['id'] == self.pairings[matchIndex][1].id, 'rating'] = self.pairings[matchIndex][
+                                                                                              1].rating + p2NewRating
+
+        self.body.refresh_entries()
+        save_db()
+        self.parent.destroy()
+        self.parent.update()
 
 
 class PlayersHeader(tk.Frame):
@@ -388,7 +444,8 @@ class PlayersFooter(tk.Frame):
         save_db()
 
     def new_round(self):
-        if (self.results is not None and self.results.winfo_exists() == 1) or (self.prettyView is not None and self.prettyView.winfo_exists() == 1):
+        if (self.results is not None and self.results.winfo_exists() == 1) or (
+                self.prettyView is not None and self.prettyView.winfo_exists() == 1):
             return
 
         self.body.refresh_df()
@@ -396,7 +453,7 @@ class PlayersFooter(tk.Frame):
         round = self.matchmaker.get_round()
         self.results = tk.Toplevel()
         self.results.title(f"Resultater for runde {round}")
-        resFrame = ResultsFrame(self.results, matches)
+        resFrame = ResultsFrame(self.results, matches, self.body, round)
         resFrame.pack()
 
         self.prettyView = tk.Toplevel(self)
@@ -431,16 +488,32 @@ class PlayersFooter(tk.Frame):
                     canvas.create_text(math.floor(e.width * 1 / 6), math.floor(e.height * 2 / 15) + i * 45,
                                        anchor="center",
                                        text=f"Bræt {i + 1}", font=("Josefin Sans", 26), fill='#FFFFFF')
+
+
+                    p1_previous_matches = MATCHES.loc[
+                        ((MATCHES['p1Id'] == match[0].id) | (MATCHES['p2Id'] == match[0].id))]
+                    p1Wins = p1_previous_matches.loc[p1_previous_matches['winnerId'] == match[0].id]
+                    p1Draws = p1_previous_matches.loc[p1_previous_matches['winnerId'] == ""]
+                    p1Losses = p1_previous_matches.loc[p1_previous_matches['winnerId'] != match[0].id]
+                    p1_score_str = f"{len(p1Wins.index)}-{len(p1Draws.index)}-{len(p1Losses.index)}"
                     canvas.create_text(math.floor(e.width * 2 / 6), math.floor(e.height * 2 / 15) + i * 45,
                                        anchor="center",
-                                       text=f"({match[0].rating}) {match[0].name}", font=("Josefin Sans", 26),
+                                       text=f"{match[0].name} ({match[0].rating} {p1_score_str})", font=("Josefin Sans", 26),
                                        fill='#FFFFFF')
+
                     canvas.create_text(math.floor(e.width * 3 / 6), math.floor(e.height * 2 / 15) + i * 45,
                                        anchor="center",
                                        text=f"vs", font=("Josefin Sans", 26), fill='#FFFFFF')
+
+                    p2_previous_matches = MATCHES.loc[
+                        ((MATCHES['p1Id'] == match[1].id) | (MATCHES['p2Id'] == match[1].id))]
+                    p2Wins = p2_previous_matches.loc[p2_previous_matches['winnerId'] == match[1].id]
+                    p2Draws = p2_previous_matches.loc[p2_previous_matches['winnerId'] == ""]
+                    p2Losses = p2_previous_matches.loc[p2_previous_matches['winnerId'] != match[1].id]
+                    p2_score_str = f"{len(p2Wins.index)}-{len(p2Draws.index)}-{len(p2Losses.index)}"
                     canvas.create_text(math.floor(e.width * 4 / 6), math.floor(e.height * 2 / 15) + i * 45,
                                        anchor="center",
-                                       text=f"{match[1].name} ({match[1].rating})", font=("Josefin Sans", 26),
+                                       text=f"{match[1].name} ({match[1].rating} {p2_score_str})", font=("Josefin Sans", 26),
                                        fill='#FFFFFF')
                 width_before = e.width
                 height_before = e.height
@@ -451,6 +524,6 @@ class PlayersFooter(tk.Frame):
 load_db()
 root = tk.Tk()
 root.geometry("1000x500")
-root.title("Bønderne MatchMaker by ChrIT")
+root.title("Bønderne MatchMaker by In-House Geek CB")
 PlayersUI(root)
 root.mainloop()
