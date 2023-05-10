@@ -6,9 +6,10 @@ from PIL import ImageTk, Image
 import sys, os
 import pandas as pd
 import uuid
+import userpaths
 
 SESSION_ID = str(uuid.uuid4())
-SAVE_PATH = os.path.expanduser('Documents/Boenderne')
+SAVE_PATH = os.path.join(userpaths.get_my_documents(), 'Boenderne')
 PLAYERS = pd.DataFrame({
     'id': pd.Series(dtype='str'),
     'name': pd.Series(dtype='str'),
@@ -487,33 +488,33 @@ class PlayersFooter(tk.Frame):
                 for i, match in enumerate(matches):
                     canvas.create_text(math.floor(e.width * 1 / 6), math.floor(e.height * 2 / 15) + i * 45,
                                        anchor="center",
-                                       text=f"Bræt {i + 1}", font=("Josefin Sans", 26), fill='#FFFFFF')
+                                       text=f"Bræt {i + 1}", font=("Josefin Sans", 20), fill='#FFFFFF')
 
 
                     p1_previous_matches = MATCHES.loc[
                         ((MATCHES['p1Id'] == match[0].id) | (MATCHES['p2Id'] == match[0].id))]
                     p1Wins = p1_previous_matches.loc[p1_previous_matches['winnerId'] == match[0].id]
                     p1Draws = p1_previous_matches.loc[p1_previous_matches['winnerId'] == ""]
-                    p1Losses = p1_previous_matches.loc[p1_previous_matches['winnerId'] != match[0].id]
+                    p1Losses = p1_previous_matches.loc[(p1_previous_matches['winnerId'] != match[0].id) & (p1_previous_matches['winnerId'] != "")]
                     p1_score_str = f"{len(p1Wins.index)}-{len(p1Draws.index)}-{len(p1Losses.index)}"
                     canvas.create_text(math.floor(e.width * 2 / 6), math.floor(e.height * 2 / 15) + i * 45,
                                        anchor="center",
-                                       text=f"{match[0].name} ({match[0].rating} {p1_score_str})", font=("Josefin Sans", 26),
+                                       text=f"{match[0].name} ({match[0].rating} - {p1_score_str})", font=("Josefin Sans", 20),
                                        fill='#FFFFFF')
 
                     canvas.create_text(math.floor(e.width * 3 / 6), math.floor(e.height * 2 / 15) + i * 45,
                                        anchor="center",
-                                       text=f"vs", font=("Josefin Sans", 26), fill='#FFFFFF')
+                                       text=f"vs", font=("Josefin Sans", 20), fill='#FFFFFF')
 
                     p2_previous_matches = MATCHES.loc[
                         ((MATCHES['p1Id'] == match[1].id) | (MATCHES['p2Id'] == match[1].id))]
                     p2Wins = p2_previous_matches.loc[p2_previous_matches['winnerId'] == match[1].id]
                     p2Draws = p2_previous_matches.loc[p2_previous_matches['winnerId'] == ""]
-                    p2Losses = p2_previous_matches.loc[p2_previous_matches['winnerId'] != match[1].id]
+                    p2Losses = p2_previous_matches.loc[(p2_previous_matches['winnerId'] != match[1].id) & (p2_previous_matches['winnerId'] != "")]
                     p2_score_str = f"{len(p2Wins.index)}-{len(p2Draws.index)}-{len(p2Losses.index)}"
                     canvas.create_text(math.floor(e.width * 4 / 6), math.floor(e.height * 2 / 15) + i * 45,
                                        anchor="center",
-                                       text=f"{match[1].name} ({match[1].rating} {p2_score_str})", font=("Josefin Sans", 26),
+                                       text=f"{match[1].name} ({match[1].rating} - {p2_score_str})", font=("Josefin Sans", 20),
                                        fill='#FFFFFF')
                 width_before = e.width
                 height_before = e.height
