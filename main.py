@@ -33,6 +33,8 @@ def load_db():
     if os.path.exists(os.path.join(SAVE_PATH, 'PLAYERS.csv')):
         PLAYERS = pd.read_csv(os.path.join(SAVE_PATH, 'PLAYERS.csv'), index_col=0,
                               dtype={'id': str, 'name': str, 'rating': int, 'oversidder': bool})
+        PLAYERS = PLAYERS.sort_values(by='name')
+        PLAYERS = PLAYERS.sort_values(by='oversidder')
     if os.path.exists(os.path.join(SAVE_PATH, 'MATCHES.csv')):
         MATCHES = pd.read_csv(os.path.join(SAVE_PATH, 'MATCHES.csv'), keep_default_na=False, index_col=0,
                               dtype={'sessionId': str, 'round': int, 'p1Id': str, 'p2Id': str, 'winnerId': str,
@@ -52,7 +54,7 @@ def save_db():
 
 def compute_rating_change(p1Rating, p2Rating, outcome):
     e = 1 / (1 + 10 ** ((p2Rating - p1Rating) / 400))
-    return max(int(math.floor(32 * (outcome - e))), 0)
+    return int(math.floor(32 * (outcome - e)))
 
 
 def resource_path(relative_path):
@@ -107,7 +109,7 @@ class MatchMaker:
             current = random.choice(players)
             players.remove(current)
             rating_differences = list(map(lambda x: abs(x.rating - current.rating), players))
-            weightings = list(map(lambda x: min(max(10 * math.e ** (-(x / 800) ** 2), 1), 10), rating_differences))
+            weightings = list(map(lambda x: min(max(10 * math.e ** (-(x / 800) ** 2), 1), 25), rating_differences))
             opponent = random.choices(players, weights=weightings, k=1)[0]
             i = 0
             while self.has_played_recently(current.id, opponent.id) and i < 0:
@@ -187,7 +189,7 @@ class PlayersBody(tk.Frame):
 
         # Skip entry
         skipping = tk.BooleanVar()
-        skip = tk.Checkbutton(self, variable=skipping, onvalue=True, offvalue=False)
+        skip = tk.Checkbutton(self, variable=skipping, onvalue=False, offvalue=True)
         if player is not None:
             skipping.set(player.oversidder)
 
@@ -337,33 +339,19 @@ class ResultsFrame(tk.Frame):
             self.grid_columnconfigure(i, weight=1)
         for i, match in enumerate(pairings):
             if match[0].id != 'Oversidder' and match[1].id != 'Oversidder':
-                p1WinVar = tk.BooleanVar()
-                p2WinVar = tk.BooleanVar()
-                drawVar = tk.BooleanVar()
+                winner = tk.IntVar()
 
-                def reset_p1():
-                    p2WinVar.set(False)
-                    drawVar.set(False)
-
-                def reset_p2():
-                    p1WinVar.set(False)
-                    drawVar.set(False)
-
-                def reset_draw():
-                    p1WinVar.set(False)
-                    p2WinVar.set(False)
-
-                p1 = tk.Checkbutton(self, variable=p1WinVar, command=reset_p1)
+                p1 = tk.Radiobutton(self, variable=winner, value=1)
                 p1.grid(row=i + 1, column=0)
                 p1Name = tk.Label(self, text=match[0].name)
                 p1Name.grid(row=i + 1, column=1)
-                draw = tk.Checkbutton(self, variable=drawVar, command=reset_draw)
+                draw = tk.Radiobutton(self, variable=winner, value=0)
                 draw.grid(row=i + 1, column=3)
-                p2 = tk.Checkbutton(self, variable=p2WinVar, command=reset_p2)
+                p2 = tk.Radiobutton(self, variable=winner, value=2)
                 p2.grid(row=i + 1, column=6)
                 p2Name = tk.Label(self, text=match[1].name)
                 p2Name.grid(row=i + 1, column=5)
-                self.entries.append([i, p1WinVar, p2WinVar, drawVar])
+                self.entries.append([i, winner])
 
         self.grid_columnconfigure(0, weight=1)
         save = tk.Button(self, text="Gem", command=self.save)
@@ -376,12 +364,12 @@ class ResultsFrame(tk.Frame):
         if len(self.entries) > 0 and not all(list(map(lambda x: x[1].get() or x[2].get() or x[3].get(), self.entries))):
             return
 
-        for matchIndex, p1WinVar, p2WinVar, drawVar in self.entries:
-            if p1WinVar.get():
+        for matchIndex, winner in self.entries:
+            if winner.get() == 1:
                 winnerId = self.pairings[matchIndex][0].id
                 p1Outcome = 1
                 p2Outcome = 0
-            elif p2WinVar.get():
+            elif winner.get() == 1:
                 winnerId = self.pairings[matchIndex][1].id
                 p1Outcome = 0
                 p2Outcome = 1
@@ -401,14 +389,14 @@ class ResultsFrame(tk.Frame):
             MATCHES = pd.concat([new_row, MATCHES.loc[:]]).reset_index(drop=True)
 
             if 'Oversidder' != self.pairings[matchIndex][0].id and 'Oversidder' != self.pairings[matchIndex][1].id:
-                p1NewRating = compute_rating_change(self.pairings[matchIndex][0].rating,
+                p1RatingChange = compute_rating_change(self.pairings[matchIndex][0].rating,
                                                     self.pairings[matchIndex][1].rating, p1Outcome)
-                p2NewRating = compute_rating_change(self.pairings[matchIndex][1].rating,
+                p2RatingChange = compute_rating_change(self.pairings[matchIndex][1].rating,
                                                     self.pairings[matchIndex][0].rating, p2Outcome)
-                PLAYERS.loc[PLAYERS['id'] == self.pairings[matchIndex][0].id, 'rating'] = self.pairings[matchIndex][
-                                                                                              0].rating + p1NewRating
-                PLAYERS.loc[PLAYERS['id'] == self.pairings[matchIndex][1].id, 'rating'] = self.pairings[matchIndex][
-                                                                                              1].rating + p2NewRating
+                PLAYERS.loc[PLAYERS['id'] == self.pairings[matchIndex][0].id, 'rating'] = max(self.pairings[matchIndex][
+                                                                                              0].rating + p1RatingChange, 0)
+                PLAYERS.loc[PLAYERS['id'] == self.pairings[matchIndex][1].id, 'rating'] = max(self.pairings[matchIndex][
+                                                                                              1].rating + p2RatingChange, 0)
 
         self.body.refresh_entries()
         save_db()
@@ -419,7 +407,7 @@ class ResultsFrame(tk.Frame):
 class PlayersHeader(tk.Frame):
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
-        names = ["Navn", "Rating", "Udebliver", ""]
+        names = ["Navn", "Rating", "Spiller", ""]
         frame = tk.Frame(self)
         frame.pack(side="top", fill="both", expand=True)
         for i, title in enumerate(names):
@@ -478,7 +466,6 @@ class PlayersFooter(tk.Frame):
                 image = Image.open(resource_path("bg.png"))
                 # resize the image with width and height of root
                 resized = image.resize((e.width, e.height), Image.LANCZOS)
-
                 image2 = ImageTk.PhotoImage(resized)
                 canvas.create_image(0, 0, image=image2, anchor='nw')
                 canvas.create_text(math.floor(e.width * 2 / 6), math.floor(e.height * 1 / 15), anchor="center",
