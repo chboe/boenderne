@@ -361,15 +361,12 @@ class ResultsFrame(tk.Frame):
         global PLAYERS
         global MATCHES
 
-        if len(self.entries) > 0 and not all(list(map(lambda x: x[1].get() or x[2].get() or x[3].get(), self.entries))):
-            return
-
         for matchIndex, winner in self.entries:
             if winner.get() == 1:
                 winnerId = self.pairings[matchIndex][0].id
                 p1Outcome = 1
                 p2Outcome = 0
-            elif winner.get() == 1:
+            elif winner.get() == 2:
                 winnerId = self.pairings[matchIndex][1].id
                 p1Outcome = 0
                 p2Outcome = 1
